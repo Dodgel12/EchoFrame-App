@@ -1,4 +1,6 @@
-ECHOFRAMES Location-based photo echoes EchoFrames is a social discovery app where photos are tied to exact GPS locations. 
+ECHOFRAMES 
+
+Location-based photo echoes EchoFrames is a social discovery app where photos are tied to exact GPS locations. 
 Capture a moment, attach it to where you are, and let others discover it when they visit the same place. No followers, no feeds—just a map of shared memories. 
 
 ──────────────────────────────────────── 
