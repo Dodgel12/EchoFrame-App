@@ -3,13 +3,18 @@ Capture a moment, attach it to where you are, and let others discover it when th
 
 ──────────────────────────────────────── 
 
-Concept EchoFrames introduces geo-anchored media. Every photo is taken inside the app and permanently linked to its GPS coordinates. 
+Concept
+
+EchoFrames introduces geo-anchored media. Every photo is taken inside the app and permanently linked to its GPS coordinates. 
 When another user later approaches that spot, they may receive a notification like: 
 Echo Found Nearby Someone left a memory here. Opening the notification reveals the photo, its timestamp, 
 and a discussion thread. Over time, locations accumulate echoes—a social layer built on top of physical spaces.
 
 ──────────────────────────────────────── 
-Core Features Geo-Anchored Photos Photos are tied to real-world coordinates. 
+
+Core Features 
+
+Geo-Anchored Photos Photos are tied to real-world coordinates. 
 To preserve authenticity: Must be taken with the in-app camera (no gallery uploads). 
 Automatic timestamp overlay. GPS coordinates embedded with each echo. 
 Map-First Interface The main view is an interactive map. 
@@ -26,7 +31,10 @@ Comments Each echo has a comment thread for discussions about the photo or place
 Direct Messaging Private chat between users who discover each other’s echoes or share locations.
 
 ──────────────────────────────────────── 
-Technology Stack EchoFrames is built with a modern mobile stack focused on rapid development and scalability. 
+
+Technology Stack 
+
+EchoFrames is built with a modern mobile stack focused on rapid development and scalability. 
 Mobile Application React Native Expo TypeScript Expo APIs used: Expo Camera Expo Location Expo Notifications Backend Platform EchoFrames uses Supabase as its backend infrastructure.
 Supabase provides: PostgreSQL database authentication storage real-time subscriptions serverless edge functions Infrastructure Components Core backend services include: 
 PostgreSQL with PostGIS for geolocation queries Supabase Storage for photo hosting Supabase Auth for user accounts Supabase Realtime for messaging and live updates Supabase Edge Functions for backend logic 
