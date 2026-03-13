@@ -1,0 +1,440 @@
+ECHOFRAMES — Development Roadmap
+Phase 0 — Product Definition (1–3 days)
+
+Before writing more code, finalize the core product constraints.
+
+Define the rules of the platform
+
+Decide:
+
+• Maximum photo distance detection (ex: 30m–50m radius)
+• Maximum echoes per user per day
+• Photo storage limit per echo
+• Comment limits / moderation rules
+• Whether echoes can expire
+
+Define discovery model
+
+Echo discovery may be:
+
+Option A — Automatic
+
+App checks location in background
+
+Push notification when near echo
+
+Option B — Map Based
+
+User opens map and sees nearby echoes
+
+Recommendation for MVP
+
+Start with Map-based discovery only.
+Background GPS + push notifications is expensive and complex early.
+
+Phase 1 — Backend Foundation (Supabase)
+
+Goal: working data model
+
+Estimated time: 2–4 days
+
+1. Database Schema
+
+Use PostgreSQL + PostGIS.
+
+Users =
+id (uuid) 
+username
+avatar_url
+created_at
+
+Echoes =
+id (uuid)
+user_id
+image_url
+latitude
+longitude
+location (geography POINT)
+timestamp
+visibility (public / circle)
+rating_score
+created_at
+
+
+Ratings =
+id
+user_id
+echo_id
+value (+1 / -1)
+created_at
+
+
+Comments =
+id
+echo_id
+user_id
+content
+created_at
+
+
+Messages =
+id
+sender_id
+receiver_id
+content
+created_at
+2. PostGIS Setup
+
+Enable extension:
+
+CREATE EXTENSION postgis;
+
+Echo location column:
+
+location GEOGRAPHY(POINT, 4326)
+
+Nearby query example:
+
+SELECT *
+FROM echoes
+WHERE ST_DWithin(
+    location,
+    ST_MakePoint(user_lon, user_lat)::geography,
+    50
+);
+
+This returns echoes within 50 meters.
+
+3. Supabase Storage
+
+Create bucket:
+
+echo-photos
+
+Structure:
+
+echo-photos/
+   user_id/
+      echo_id.jpg
+
+Limit size:
+
+max 5MB
+4. Authentication
+
+Use Supabase Auth:
+
+Methods:
+
+• Email + password
+• Google login (optional later)
+
+Phase 2 — Mobile MVP (React Native + Expo)
+
+Estimated time: 1–2 weeks
+
+Goal: basic usable app
+
+Core Screens
+1 — Authentication Screen
+
+Functions:
+
+• login
+• register
+
+2 — Map Screen (Main Screen)
+
+Libraries:
+
+react-native-maps
+expo-location
+
+Features:
+
+• show user location
+• load nearby echoes
+• display markers
+
+Marker types:
+
+• normal echo
+• high rated echo
+
+3 — Capture Echo Screen
+
+Use:
+
+expo-camera
+expo-location
+
+Flow:
+
+Open camera
+Take photo
+Get GPS coordinates
+Upload photo
+Create echo in DB
+
+Add overlay:
+
+timestamp
+4 — Echo View Screen
+
+When clicking marker:
+
+Display:
+
+• photo
+• time
+• rating buttons
+• comments
+
+5 — Comment System
+
+Basic:
+
+load comments
+post comment
+Phase 3 — Core Logic
+
+Estimated time: 3–5 days
+
+Echo Ranking Algorithm
+
+Avoid old echoes dominating.
+
+Basic ranking formula:
+
+score =
+(upvotes - downvotes)
++ recency_boost
++ randomness
+
+Example:
+
+score =
+rating_score
++ (1 / age_in_days)
++ random(0,0.3)
+
+Calculate inside:
+
+Supabase Edge Function
+
+Echo Hotspots
+
+Hotspot if:
+
+echo_count > threshold
+
+Example:
+
+>10 echoes within 30m
+
+Map marker becomes special icon.
+
+Phase 4 — Messaging System
+
+Estimated time: 3 days
+
+Use Supabase Realtime.
+
+Chat structure:
+
+user A discovers echo of user B
+→ chat unlocked
+
+Features:
+
+• 1–1 chat
+• realtime updates
+• message history
+
+Phase 5 — Notifications
+
+Estimated time: 4–6 days
+
+Libraries:
+
+expo-notifications
+
+Two types:
+
+Echo Nearby
+
+Trigger when:
+
+user enters radius
+
+Implementation:
+
+Option A (cheap)
+
+check every X minutes while app open
+
+Option B (later)
+
+background location task
+Interaction Notifications
+
+When:
+
+• someone comments
+• someone rates
+
+Use:
+
+Supabase Edge Function + push notification
+
+Phase 6 — Privacy System
+
+Estimated time: 2 days
+
+Echo visibility:
+
+public
+circle
+
+Circle requires:
+
+friends table
+friends
+user_id
+friend_id
+status
+Phase 7 — Anti-Spam / Safety
+
+Critical for geo apps.
+
+Add limits:
+
+max echoes per day
+max comments per minute
+photo moderation
+
+Add:
+
+report system
+Phase 8 — Performance & Scaling
+
+When user base grows.
+
+Photo Optimization
+
+Add:
+
+image compression
+
+Using:
+
+expo-image-manipulator
+Caching
+
+Use:
+
+react-query
+
+or
+
+TanStack Query
+Database Indexes
+
+Important indexes:
+
+location (GIST)
+user_id
+echo_id
+created_at
+Phase 9 — Advanced Features (Later)
+
+Not MVP.
+
+Echo Trails
+
+Users can create paths of memories.
+
+Example:
+
+travel route
+campus memories
+city walk
+AR Mode
+
+View echoes in camera view.
+
+Technologies:
+
+ARKit
+ARCore
+Temporary Echoes
+
+Echo disappears after:
+
+24 hours
+AI Content Filtering
+
+Detect:
+
+NSFW
+spam
+Suggested Development Timeline
+
+Realistically for a solo dev:
+
+Week 1
+Backend + auth
+
+Week 2
+Map + camera + upload
+
+Week 3
+Echo viewing + comments
+
+Week 4
+Ranking + messaging
+
+Week 5
+Notifications
+
+Week 6
+Testing + polishing
+Biggest Technical Risks
+1 — Location accuracy
+
+GPS error can be 5–20m.
+
+You must allow radius detection not exact point.
+
+2 — Storage costs
+
+Photos can become expensive.
+
+Solutions:
+
+compress images
+limit resolution
+limit uploads
+3 — Notification spam
+
+If poorly designed users get:
+
+50 notifications walking in city
+
+You need:
+
+cooldowns
+MVP Definition (Very Important)
+
+The real MVP should only include:
+
+• login
+• map
+• take photo
+• upload echo
+• view echo
+• comments
+
+No messaging, no push notifications yet.
+
+That alone is enough to test the concept.x
