@@ -160,3 +160,30 @@ export function stopPollingForEchoes(
     clearInterval(pollInterval);
   }
 }
+
+/**
+ * Simplified auto-starting polling for use in app layout
+ * Starts background polling every 60 seconds for nearby echoes
+ */
+export function startAutoPolling(): NodeJS.Timeout {
+  import("./location-service").then((locationService) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const location = await locationService.getCurrentLocation();
+        if (!location) return;
+
+        const newEchoes = await checkForNearbyEchoes(location, 500);
+        for (const echo of newEchoes) {
+          await sendEchoDiscoveryNotification(echo);
+        }
+      } catch (error) {
+        console.error("Auto-polling error:", error);
+      }
+    }, 60000); // Poll every 60 seconds
+
+    return pollInterval;
+  });
+
+  // Return a dummy interval that can be cleared
+  return setInterval(() => {}, 60000);
+}

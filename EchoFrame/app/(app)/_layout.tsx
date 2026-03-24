@@ -1,9 +1,34 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import { useEffect, useRef } from "react";
 import { useColorScheme } from "react-native";
+import {
+    setupNotificationResponseListener,
+    startAutoPolling,
+} from "../../lib/discovery-service";
 
 export default function AppLayout() {
   const colorScheme = useColorScheme();
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Start location polling and notification listener
+  useEffect(() => {
+    // Set up notification tap handler
+    const subscription = setupNotificationResponseListener((echoId) => {
+      // Navigation to echo detail handled by notification listener
+      console.log("Echo tapped from notification:", echoId);
+    });
+
+    // Start auto-polling for echoes
+    pollingIntervalRef.current = startAutoPolling();
+
+    return () => {
+      subscription?.remove();
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
 
   const tabBarBackgroundColor = colorScheme === "dark" ? "#1a1a1a" : "#fff";
   const tabBarActiveTintColor = "#0084ff";
