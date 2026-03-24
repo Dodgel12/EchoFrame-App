@@ -2,6 +2,8 @@ import { decode } from "base64-arraybuffer";
 import * as FileSystem from "expo-file-system";
 import { supabase } from "./supabase";
 
+const STORAGE_BUCKET = "echoes";
+
 export interface Echo {
   id: string;
   user_id: string;
@@ -18,6 +20,39 @@ export interface Echo {
   };
 }
 
+/**
+ * Initialize storage bucket - check if it exists and create if needed
+ * Note: Public bucket creation requires elevated privileges and must be done via Supabase dashboard
+ */
+export async function initializeStorage(): Promise<boolean> {
+  try {
+    // Try to list objects in the bucket to verify it exists
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .list("", { limit: 1 });
+
+    if (error) {
+      if (error.message.includes("Bucket not found")) {
+        console.error(
+          `Storage bucket "${STORAGE_BUCKET}" not found. Please create it in your Supabase dashboard:\n` +
+            "1. Go to Storage in your Supabase project\n" +
+            "2. Click 'Create a new bucket'\n" +
+            "3. Name it 'echoes'\n" +
+            "4. Enable 'Public bucket' for public image access\n" +
+            "5. Click 'Create bucket'",
+        );
+        return false;
+      }
+      throw error;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Failed to initialize storage:", error);
+    return false;
+  }
+}
+
 export async function uploadEcho(
   photoUri: string,
   latitude: number,
@@ -26,6 +61,14 @@ export async function uploadEcho(
   userId: string,
 ): Promise<Echo | null> {
   try {
+    // Verify storage bucket exists
+    const storageReady = await initializeStorage();
+    if (!storageReady) {
+      throw new Error(
+        `Storage bucket "${STORAGE_BUCKET}" not found. Create it in Supabase dashboard.`,
+      );
+    }
+
     // Read the image file
     const base64 = await FileSystem.readAsStringAsync(photoUri, {
       encoding: FileSystem.EncodingType.Base64,
@@ -36,7 +79,7 @@ export async function uploadEcho(
 
     // Upload to Supabase Storage
     const { data: storageData, error: storageError } = await supabase.storage
-      .from("echoes")
+      .from(STORAGE_BUCKET)
       .upload(fileName, decode(base64), {
         contentType,
       });
@@ -46,7 +89,7 @@ export async function uploadEcho(
     // Get public URL
     const {
       data: { publicUrl },
-    } = supabase.storage.from("echoes").getPublicUrl(fileName);
+    } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(fileName);
 
     // Create echo record in database
     const { data: echoData, error: dbError } = await supabase
@@ -129,11 +172,28 @@ export async function getEchoById(echoId: string): Promise<Echo | null> {
   try {
     const { data, error } = await supabase
       .from("echoes")
-      .select("*, users(username, avatar_url)")
+      .select(
+        "id, user_id, image_url, latitude, longitude, timestamp, visibility, rating_score, created_at",
+      )
       .eq("id", echoId)
       .single();
 
     if (error) throw error;
+
+    if (data && data.user_id) {
+      // Fetch user separately to avoid join issues with RLS
+      const { data: userData } = await supabase
+        .from("users")
+        .select("username, avatar_url")
+        .eq("id", data.user_id)
+        .single();
+
+      return {
+        ...data,
+        user: userData || undefined,
+      };
+    }
+
     return data;
   } catch (error) {
     console.error("Error fetching echo:", error);

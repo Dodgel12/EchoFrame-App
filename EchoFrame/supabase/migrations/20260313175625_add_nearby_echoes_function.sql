@@ -10,7 +10,7 @@ returns table (
   image_url text,
   latitude double precision,
   longitude double precision,
-  timestamp timestamp with time zone,
+  "timestamp" timestamp with time zone,
   visibility text,
   rating_score integer,
   created_at timestamp with time zone,
@@ -35,7 +35,7 @@ as $$
   from public.echoes e
   join public.users u on e.user_id = u.id
   where e.visibility = 'public'
-    and e.location::geography <-> st_point(user_lon, user_lat)::geography < radius_meters
+    and extensions.st_dwithin(e.location, extensions.st_point(user_lon, user_lat)::extensions.geography, radius_meters)
   order by
     e.rating_score desc,
     e.created_at desc

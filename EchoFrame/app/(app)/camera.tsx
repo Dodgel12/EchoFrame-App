@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { CameraView } from "expo-camera";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Location from "expo-location";
 import React, { useRef, useState } from "react";
 import {
@@ -11,7 +11,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { useAuth } from "../../lib/auth-context.tsx";
+import { useAuth } from "../../lib/auth-context";
 import { uploadEcho } from "../../lib/echo-service";
 import { getCurrentLocation } from "../../lib/location-service";
 
@@ -31,6 +31,7 @@ export default function CameraScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
   const { user } = useAuth();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   React.useEffect(() => {
     requestPermissions();
@@ -38,15 +39,53 @@ export default function CameraScreen() {
 
   const requestPermissions = async () => {
     try {
-      const cameraStatus = await CameraView.requestCameraPermissionsAsync();
+      const cameraStatus = await requestCameraPermission();
       const locationStatus = await Location.requestForegroundPermissionsAsync();
 
-      setHasPermission(
-        cameraStatus.status === "granted" &&
-          locationStatus.status === "granted",
-      );
+      const hasCamera = cameraStatus?.granted || false;
+      const hasLocation = locationStatus.status === "granted";
+
+      if (!hasCamera) {
+        Alert.alert(
+          "Camera Permission Required",
+          "Please enable camera access in Settings to capture echoes.",
+          [
+            {
+              text: "Try Again",
+              onPress: requestPermissions,
+            },
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+          ],
+        );
+      }
+
+      if (!hasLocation) {
+        Alert.alert(
+          "Location Permission Required",
+          "Please enable location access in Settings to share your location with echoes.",
+          [
+            {
+              text: "Try Again",
+              onPress: requestPermissions,
+            },
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+          ],
+        );
+      }
+
+      setHasPermission(hasCamera && hasLocation);
     } catch (error) {
       console.error("Permission request error:", error);
+      Alert.alert(
+        "Permission Error",
+        "Failed to request permissions. Please try again.",
+      );
       setHasPermission(false);
     }
   };

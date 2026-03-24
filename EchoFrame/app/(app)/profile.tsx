@@ -2,9 +2,12 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
+    Alert,
+    Modal,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from "react-native";
@@ -32,49 +35,57 @@ export default function ProfileScreen() {
   });
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editingUsername, setEditingUsername] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
+  const [updatingUsername, setUpdatingUsername] = useState(false);
+
+  const fetchProfile = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      if (!user?.id) return;
+
+      // Fetch user profile
+      const { data: profileData, error: profileError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError) throw profileError;
+      setProfile(profileData);
+
+      // Fetch echo count
+      const { count: echoCount, error: echoError } = await supabase
+        .from("echoes")
+        .select("id", { count: "exact" })
+        .eq("user_id", user.id);
+
+      if (echoError) throw echoError;
+
+      // Fetch rating count
+      const { count: ratingCount, error: ratingError } = await supabase
+        .from("ratings")
+        .select("id", { count: "exact" })
+        .eq("user_id", user.id);
+
+      if (ratingError) throw ratingError;
+
+      setStats({
+        echo_count: echoCount || 0,
+        rating_count: ratingCount || 0,
+      });
+    } catch (err) {
+      console.error("Failed to fetch profile:", err);
+      setError("Failed to load profile. Please try again.");
+      setProfile(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        if (!user?.id) return;
-
-        // Fetch user profile
-        const { data: profileData, error: profileError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-
-        if (profileError) throw profileError;
-        setProfile(profileData);
-
-        // Fetch echo count
-        const { count: echoCount, error: echoError } = await supabase
-          .from("echoes")
-          .select("id", { count: "exact" })
-          .eq("user_id", user.id);
-
-        if (echoError) throw echoError;
-
-        // Fetch rating count
-        const { count: ratingCount, error: ratingError } = await supabase
-          .from("ratings")
-          .select("id", { count: "exact" })
-          .eq("user_id", user.id);
-
-        if (ratingError) throw ratingError;
-
-        setStats({
-          echo_count: echoCount || 0,
-          rating_count: ratingCount || 0,
-        });
-      } catch (error) {
-        console.error("Failed to fetch profile:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchProfile();
   }, [user?.id]);
 
@@ -89,10 +100,70 @@ export default function ProfileScreen() {
     }
   };
 
+  const openEditUsernameModal = () => {
+    setNewUsername(profile?.username || "");
+    setEditingUsername(true);
+  };
+
+  const handleUpdateUsername = async () => {
+    if (!newUsername.trim()) {
+      Alert.alert("Error", "Username cannot be empty");
+      return;
+    }
+
+    if (newUsername === profile?.username) {
+      setEditingUsername(false);
+      return;
+    }
+
+    setUpdatingUsername(true);
+    try {
+      const { data, error } = await supabase.rpc("update_user_username", {
+        new_username: newUsername,
+      });
+
+      if (error) {
+        Alert.alert("Error", error.message || "Failed to update username");
+        return;
+      }
+
+      if (data?.success) {
+        // Update local profile
+        setProfile({
+          ...profile!,
+          username: newUsername,
+        });
+        setEditingUsername(false);
+        Alert.alert("Success", "Username updated successfully");
+      } else {
+        Alert.alert("Error", data?.message || "Failed to update username");
+      }
+    } catch (err) {
+      console.error("Error updating username:", err);
+      Alert.alert("Error", "Failed to update username");
+    } finally {
+      setUpdatingUsername(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#0084ff" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity
+          style={[styles.button, styles.retryButton]}
+          onPress={fetchProfile}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -130,6 +201,15 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.sectionItem}>
+          <Text style={styles.sectionItemText}>Username</Text>
+          <View style={styles.usernameRow}>
+            <Text style={styles.sectionItemValue}>{profile.username}</Text>
+            <TouchableOpacity onPress={openEditUsernameModal}>
+              <Ionicons name="pencil" size={18} color="#0084ff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.sectionItem}>
           <Text style={styles.sectionItemText}>Email</Text>
           <Text style={styles.sectionItemValue}>{user?.email}</Text>
         </View>
@@ -153,6 +233,55 @@ export default function ProfileScreen() {
         <Ionicons name="log-out" size={20} color="#d32f2f" />
         <Text style={styles.signOutButtonText}>Sign Out</Text>
       </TouchableOpacity>
+
+      {/* Edit Username Modal */}
+      <Modal
+        visible={editingUsername}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditingUsername(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Username</Text>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="New username"
+              value={newUsername}
+              onChangeText={setNewUsername}
+              editable={!updatingUsername}
+              autoCapitalize="none"
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setEditingUsername(false)}
+                disabled={updatingUsername}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.saveButton,
+                  updatingUsername && styles.buttonDisabled,
+                ]}
+                onPress={handleUpdateUsername}
+                disabled={updatingUsername}
+              >
+                {updatingUsername ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -279,5 +408,75 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  retryButton: {
+    backgroundColor: "#0084ff",
+    borderColor: "#0084ff",
+    marginTop: 16,
+    marginHorizontal: 16,
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  usernameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 20,
+    width: "80%",
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 16,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 20,
+    fontSize: 14,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  cancelButton: {
+    backgroundColor: "#f0f0f0",
+  },
+  cancelButtonText: {
+    color: "#333",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  saveButton: {
+    backgroundColor: "#0084ff",
+  },
+  saveButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

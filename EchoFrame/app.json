@@ -9,7 +9,12 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "We need camera access to capture echoes",
+        "NSLocationWhenInUseUsageDescription": "We need your location to geo-tag echoes and discover nearby ones",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "We need background location access to notify you of nearby echoes"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,18 +24,13 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.dodgel.EchoFrame"
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-    "permissions": [
-      "android.permission.CAMERA",
-      "android.permission.ACCESS_FINE_LOCATION",
-      "android.permission.ACCESS_COARSE_LOCATION",
-      "android.permission.POST_NOTIFICATIONS"
-    ],
     "plugins": [
       "expo-router",
       [
@@ -47,14 +47,15 @@
       ],
       "expo-secure-store"
     ],
-    "infoPlist": {
-      "NSCameraUsageDescription": "We need camera access to capture echoes",
-      "NSLocationWhenInUseUsageDescription": "We need your location to geo-tag echoes and discover nearby ones",
-      "NSLocationAlwaysAndWhenInUseUsageDescription": "We need background location access to notify you of nearby echoes"
-    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3c5307f8-bf2f-4f1d-92ca-48529d568ac7"
+      }
     }
   }
 }

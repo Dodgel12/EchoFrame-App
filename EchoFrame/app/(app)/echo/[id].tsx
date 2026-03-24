@@ -11,9 +11,9 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { useAuth } from "../../lib/auth-context";
-import type { Echo } from "../../lib/echo-service";
-import { getEchoById, rateEcho } from "../../lib/echo-service";
+import { useAuth } from "../../../lib/auth-context";
+import type { Echo } from "../../../lib/echo-service";
+import { getEchoById, rateEcho } from "../../../lib/echo-service";
 
 export default function EchoDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -104,30 +104,50 @@ export default function EchoDetailScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={28} color="#0084ff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Echo</Text>
+        <Text style={styles.headerTitle}>Echo Details</Text>
         <View style={{ width: 28 }} />
       </View>
 
-      {/* Main image */}
-      <Image source={{ uri: echo.image_url }} style={styles.mainImage} />
+      {/* Main image with overlay */}
+      <View style={styles.imageContainer}>
+        <Image source={{ uri: echo.image_url }} style={styles.mainImage} />
+        <View style={styles.imageOverlay}>
+          <Text style={styles.echoLabel}>📸 Echo</Text>
+          <Text style={styles.visibilityBadge}>
+            {echo.visibility === "public" ? "🌍 Public" : "👥 Circle"}
+          </Text>
+        </View>
+      </View>
 
-      {/* User info */}
+      {/* What is this section */}
+      <View style={styles.explanationSection}>
+        <Text style={styles.explanationTitle}>What is an Echo?</Text>
+        <Text style={styles.explanationText}>
+          A moment captured and shared at a specific location. Walk within 50m
+          to discover echoes from people around you.
+        </Text>
+      </View>
+
+      {/* User info - more prominent */}
       <View style={styles.userSection}>
-        <View style={styles.avatarPlaceholder}>
-          <Ionicons name="person" size={32} color="#0084ff" />
+        <View style={styles.avatarContainer}>
+          <Ionicons name="person" size={40} color="#fff" />
         </View>
         <View style={styles.userInfo}>
           <Text style={styles.username}>
             {echo.user?.username || "Anonymous"}
           </Text>
           <Text style={styles.timestamp}>{timeString}</Text>
+          <Text style={styles.userHint}>Shared a moment</Text>
         </View>
       </View>
 
-      {/* Location info */}
-      <View style={styles.infoSection}>
+      {/* Location & Timestamp info - card style */}
+      <View style={styles.infoCard}>
         <View style={styles.infoRow}>
-          <Ionicons name="location" size={18} color="#0084ff" />
+          <View style={styles.infoIconContainer}>
+            <Ionicons name="location" size={20} color="#0084ff" />
+          </View>
           <View style={styles.infoContent}>
             <Text style={styles.infoLabel}>Location</Text>
             <Text style={styles.infoValue}>
@@ -136,23 +156,35 @@ export default function EchoDetailScreen() {
           </View>
         </View>
 
+        <View style={styles.divider} />
+
         <View style={styles.infoRow}>
-          <Ionicons name="time" size={18} color="#0084ff" />
+          <View style={styles.infoIconContainer}>
+            <Ionicons name="time" size={20} color="#0084ff" />
+          </View>
           <View style={styles.infoContent}>
             <Text style={styles.infoLabel}>Captured</Text>
             <Text style={styles.infoValue}>
               {new Date(echo.timestamp).toLocaleDateString()}{" "}
-              {new Date(echo.timestamp).toLocaleTimeString()}
+              {new Date(echo.timestamp).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
             </Text>
           </View>
         </View>
 
+        <View style={styles.divider} />
+
         <View style={styles.infoRow}>
-          <Ionicons name="eye" size={18} color="#0084ff" />
+          <View style={styles.infoIconContainer}>
+            <Ionicons name="star" size={20} color="#ffa500" />
+          </View>
           <View style={styles.infoContent}>
-            <Text style={styles.infoLabel}>Visibility</Text>
+            <Text style={styles.infoLabel}>Community Rating</Text>
             <Text style={styles.infoValue}>
-              {echo.visibility === "public" ? "Public" : "Circle Only"}
+              {echo.rating_score || 0} engagement
+              {echo.visibility === "public" ? " • Public" : " • Private"}
             </Text>
           </View>
         </View>
@@ -160,7 +192,11 @@ export default function EchoDetailScreen() {
 
       {/* Rating section */}
       <View style={styles.ratingSection}>
-        <Text style={styles.ratingLabel}>Rate This Echo</Text>
+        <Text style={styles.ratingTitle}>How do you feel about this echo?</Text>
+        <Text style={styles.ratingSubtitle}>
+          Help others discover great moments
+        </Text>
+
         <View style={styles.ratingButtons}>
           <TouchableOpacity
             style={[
@@ -170,55 +206,47 @@ export default function EchoDetailScreen() {
             onPress={() => handleRate(1)}
             disabled={ratingLoading}
           >
-            <Ionicons
-              name="thumbs-up"
-              size={24}
-              color={userRating === 1 ? "#4caf50" : "#999"}
-            />
-            <Text
-              style={[
-                styles.ratingCount,
-                userRating === 1 && styles.ratingCountActive,
-              ]}
-            >
-              {(echo.rating_score ?? 0) + (userRating === 1 ? 1 : 0)}
-            </Text>
+            <Text style={styles.ratingEmoji}>👍</Text>
+            <Text style={styles.ratingButtonText}>Love It</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
               styles.ratingButton,
-              userRating === -1 && styles.ratingButtonActive,
+              userRating === -1 && styles.ratingButtonDislike,
             ]}
             onPress={() => handleRate(-1)}
             disabled={ratingLoading}
           >
-            <Ionicons
-              name="thumbs-down"
-              size={24}
-              color={userRating === -1 ? "#d32f2f" : "#999"}
-            />
-            <Text
-              style={[
-                styles.ratingCount,
-                userRating === -1 && styles.ratingCountActive,
-              ]}
-            >
-              {(echo.rating_score ?? 0) + (userRating === -1 ? -1 : 0)}
-            </Text>
+            <Text style={styles.ratingEmoji}>👎</Text>
+            <Text style={styles.ratingButtonText}>Not for Me</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Comments placeholder for Phase 2 */}
-      <View style={styles.commentsSection}>
-        <Text style={styles.commentsTitle}>Comments (Phase 2)</Text>
-        <Text style={styles.commentsPlaceholder}>
-          Comments and discussion threads coming in the next release.
-        </Text>
+      {/* Help section at bottom */}
+      <View style={styles.helpSection}>
+        <Text style={styles.helpTitle}>About Echoes</Text>
+        <View style={styles.helpItem}>
+          <Text style={styles.helpIcon}>📍</Text>
+          <Text style={styles.helpText}>
+            Location-based moments shared with users nearby
+          </Text>
+        </View>
+        <View style={styles.helpItem}>
+          <Text style={styles.helpIcon}>👥</Text>
+          <Text style={styles.helpText}>
+            Discover echoes by walking within 50 meters
+          </Text>
+        </View>
+        <View style={styles.helpItem}>
+          <Text style={styles.helpIcon}>⭐</Text>
+          <Text style={styles.helpText}>
+            Rate echoes to help the community find quality moments
+          </Text>
+        </View>
       </View>
-
-      <View style={{ height: 24 }} />
+      <View style={{ height: 40 }} />
     </ScrollView>
   );
 }
@@ -226,7 +254,7 @@ export default function EchoDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: "#f8f9fa",
   },
   centerContainer: {
     flex: 1,
@@ -249,6 +277,8 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
   },
+
+  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -261,14 +291,63 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
+    fontWeight: "700",
+    color: "#0084ff",
+  },
+
+  // Image container with overlay
+  imageContainer: {
+    position: "relative",
+    width: "100%",
+    height: 380,
   },
   mainImage: {
     width: "100%",
-    height: 400,
+    height: "100%",
     backgroundColor: "#e0e0e0",
   },
+  imageOverlay: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  echoLabel: {
+    fontSize: 12,
+    color: "#fff",
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  visibilityBadge: {
+    fontSize: 11,
+    color: "#ddd",
+    fontWeight: "500",
+  },
+
+  // Explanation section
+  explanationSection: {
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomColor: "#eee",
+    borderBottomWidth: 1,
+  },
+  explanationTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0084ff",
+    marginBottom: 8,
+  },
+  explanationText: {
+    fontSize: 13,
+    color: "#666",
+    lineHeight: 20,
+  },
+
+  // User section
   userSection: {
     flexDirection: "row",
     alignItems: "center",
@@ -277,12 +356,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderBottomColor: "#eee",
     borderBottomWidth: 1,
+    marginTop: 8,
   },
-  avatarPlaceholder: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#e8f1ff",
+  avatarContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#0084ff",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -292,55 +372,93 @@ const styles = StyleSheet.create({
   },
   username: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#333",
-    marginBottom: 2,
+    marginBottom: 4,
   },
   timestamp: {
     fontSize: 13,
     color: "#999",
+    marginBottom: 2,
   },
-  infoSection: {
+  userHint: {
+    fontSize: 12,
+    color: "#0084ff",
+    fontWeight: "500",
+  },
+
+  // Info card
+  infoCard: {
     backgroundColor: "#fff",
-    marginTop: 12,
-    paddingHorizontal: 16,
+    marginHorizontal: 12,
+    marginVertical: 16,
+    borderRadius: 12,
     paddingVertical: 12,
-    borderBottomColor: "#eee",
-    borderBottomWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   infoRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomColor: "#f0f0f0",
-    borderBottomWidth: 1,
+  },
+  infoIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#e8f1ff",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
   },
   infoContent: {
-    marginLeft: 12,
     flex: 1,
   },
   infoLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#999",
-    marginBottom: 2,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 4,
   },
   infoValue: {
     fontSize: 14,
     color: "#333",
-    fontWeight: "500",
+    fontWeight: "600",
   },
+  divider: {
+    height: 1,
+    backgroundColor: "#f0f0f0",
+  },
+
+  // Rating section
   ratingSection: {
     backgroundColor: "#fff",
-    marginTop: 12,
+    marginHorizontal: 12,
+    marginVertical: 16,
+    borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderBottomColor: "#eee",
-    borderBottomWidth: 1,
+    paddingVertical: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  ratingLabel: {
+  ratingTitle: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#333",
+    marginBottom: 4,
+  },
+  ratingSubtitle: {
+    fontSize: 12,
+    color: "#999",
     marginBottom: 16,
   },
   ratingButtons: {
@@ -349,42 +467,63 @@ const styles = StyleSheet.create({
   },
   ratingButton: {
     flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: "#f5f5f5",
+    justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
     borderWidth: 2,
-    borderColor: "#eee",
-    borderRadius: 8,
-    backgroundColor: "#fff",
+    borderColor: "transparent",
   },
   ratingButtonActive: {
-    backgroundColor: "#f5f5f5",
-    borderColor: "#0084ff",
+    backgroundColor: "rgba(76, 175, 80, 0.1)",
+    borderColor: "#4caf50",
   },
-  ratingCount: {
+  ratingButtonDislike: {
+    backgroundColor: "rgba(211, 47, 47, 0.1)",
+    borderColor: "#d32f2f",
+  },
+  ratingEmoji: {
+    fontSize: 24,
+    marginBottom: 6,
+  },
+  ratingButtonText: {
     fontSize: 12,
-    color: "#999",
-    marginTop: 4,
-    fontWeight: "500",
-  },
-  ratingCountActive: {
-    color: "#0084ff",
-  },
-  commentsSection: {
-    backgroundColor: "#fff",
-    marginTop: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  commentsTitle: {
-    fontSize: 14,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 8,
   },
-  commentsPlaceholder: {
+
+  // Help section
+  helpSection: {
+    backgroundColor: "#f0f8ff",
+    marginHorizontal: 12,
+    marginVertical: 16,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: "#0084ff",
+  },
+  helpTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0084ff",
+    marginBottom: 12,
+  },
+  helpItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  helpIcon: {
+    fontSize: 18,
+    marginRight: 10,
+    width: 24,
+  },
+  helpText: {
     fontSize: 13,
-    color: "#999",
-    fontStyle: "italic",
+    color: "#555",
+    flex: 1,
+    lineHeight: 18,
   },
 });

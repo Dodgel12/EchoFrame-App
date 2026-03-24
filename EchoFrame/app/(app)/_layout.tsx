@@ -13,21 +13,26 @@ export default function AppLayout() {
 
   // Start location polling and notification listener
   useEffect(() => {
-    // Set up notification tap handler
-    const subscription = setupNotificationResponseListener((echoId) => {
-      // Navigation to echo detail handled by notification listener
-      console.log("Echo tapped from notification:", echoId);
-    });
+    try {
+      // Set up notification tap handler
+      const subscription = setupNotificationResponseListener((echoId) => {
+        // Navigation to echo detail handled by notification listener
+        console.log("Echo tapped from notification:", echoId);
+      });
 
-    // Start auto-polling for echoes
-    pollingIntervalRef.current = startAutoPolling();
+      // Start auto-polling for echoes
+      pollingIntervalRef.current = startAutoPolling();
+      console.log("Auto-polling started successfully");
 
-    return () => {
-      subscription?.remove();
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
-    };
+      return () => {
+        subscription?.remove();
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+        }
+      };
+    } catch (error) {
+      console.error("Error in AppLayout effect:", error);
+    }
   }, []);
 
   const tabBarBackgroundColor = colorScheme === "dark" ? "#1a1a1a" : "#fff";

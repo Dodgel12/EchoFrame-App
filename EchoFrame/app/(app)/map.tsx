@@ -1,7 +1,14 @@
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import {
+    ActivityIndicator,
+    Animated,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
 import MapView, { Circle, Marker } from "react-native-maps";
 import { getNearbyEchoes, type Echo } from "../../lib/echo-service";
 
@@ -10,11 +17,27 @@ interface UserLocation {
   longitude: number;
 }
 
+const DETECTION_RADIUS_METERS = 500; // Detect echoes up to 500m away
+const PROXIMITY_RADIUS_METERS = 50; // Reveal echo details at 50m or closer
+
+const calculateDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number => {
+  const dLat = lat2 - lat1;
+  const dLon = lon2 - lon1;
+  return Math.sqrt(dLat * dLat + dLon * dLon) * 111000; // Rough conversion to meters
+};
+
 export default function MapScreen() {
   const [location, setLocation] = useState<UserLocation | null>(null);
   const [echoes, setEchoes] = useState<Echo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [closestDistance, setClosestDistance] = useState<number | null>(null);
+  const [radarPulse] = useState(new Animated.Value(0));
   const router = useRouter();
 
   useEffect(() => {
@@ -28,7 +51,7 @@ export default function MapScreen() {
         }
 
         const userLocation = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
+          accuracy: Location.Accuracy.BestForNavigation,
         });
 
         const newLocation = {
@@ -38,8 +61,26 @@ export default function MapScreen() {
         setLocation(newLocation);
         setError(null);
 
-        // Fetch nearby echoes
+        // Fetch echoes with 50m proximity radius
         await fetchNearbyEchoes(newLocation);
+
+        // Start polling for location updates every 5 seconds
+        const interval = setInterval(() => {
+          Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.BestForNavigation,
+          })
+            .then((result) => {
+              const updated = {
+                latitude: result.coords.latitude,
+                longitude: result.coords.longitude,
+              };
+              setLocation(updated);
+              fetchNearbyEchoes(updated);
+            })
+            .catch(console.error);
+        }, 5000);
+
+        return () => clearInterval(interval);
       } catch (err) {
         console.error("Location error:", err);
         setError("Failed to get location");
@@ -51,14 +92,55 @@ export default function MapScreen() {
     requestLocationAndFetchEchoes();
   }, []);
 
+  // Animate radar pulse
+  useEffect(() => {
+    if (echoes.length > 0) {
+      Animated.sequence([
+        Animated.timing(radarPulse, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: false,
+        }),
+        Animated.timing(radarPulse, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: false,
+        }),
+      ]).start(() => {
+        // Restart pulse
+        Animated.timing(radarPulse, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: false,
+        }).start();
+      });
+    }
+  }, [echoes.length]);
+
   const fetchNearbyEchoes = async (loc: UserLocation) => {
     try {
+      // Fetch echoes within detection radius (500m)
       const nearbyEchoes = await getNearbyEchoes(
         loc.latitude,
         loc.longitude,
-        500,
+        DETECTION_RADIUS_METERS,
       );
       setEchoes(nearbyEchoes);
+
+      // Calculate closest distance
+      if (nearbyEchoes.length > 0) {
+        const distances = nearbyEchoes.map((echo) =>
+          calculateDistance(
+            loc.latitude,
+            loc.longitude,
+            echo.latitude,
+            echo.longitude,
+          ),
+        );
+        setClosestDistance(Math.min(...distances));
+      } else {
+        setClosestDistance(null);
+      }
     } catch (err) {
       console.error("Error fetching echoes:", err);
     }
@@ -100,53 +182,136 @@ export default function MapScreen() {
         initialRegion={{
           latitude: location.latitude,
           longitude: location.longitude,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
+          latitudeDelta: 0.0045,
+          longitudeDelta: 0.0045,
+        }}
+        region={{
+          latitude: location.latitude,
+          longitude: location.longitude,
+          latitudeDelta: 0.0045,
+          longitudeDelta: 0.0045,
         }}
       >
-        {/* User location marker */}
+        {/* User location marker - blue pulse */}
         <Marker
           coordinate={location}
-          title="Your Location"
-          description="You are here"
+          title="You"
           pinColor="#0084ff"
-        />
+          flat={true}
+        >
+          <View style={styles.userMarkerContainer}>
+            <View style={styles.userMarkerInner} />
+          </View>
+        </Marker>
 
-        {/* Detection radius circle (500m) */}
+        {/* Proximity radius circle (50m) */}
         <Circle
           center={location}
-          radius={500}
-          fillColor="rgba(0, 132, 255, 0.1)"
-          strokeColor="rgba(0, 132, 255, 0.3)"
+          radius={PROXIMITY_RADIUS_METERS}
+          fillColor="rgba(0, 132, 255, 0.08)"
+          strokeColor="rgba(0, 132, 255, 0.4)"
+          strokeWidth={2}
+        />
+
+        {/* Detection radius circle (500m) - subtle */}
+        <Circle
+          center={location}
+          radius={DETECTION_RADIUS_METERS}
+          fillColor="rgba(0, 132, 255, 0.02)"
+          strokeColor="rgba(0, 132, 255, 0.15)"
           strokeWidth={1}
         />
 
-        {/* Echo markers from nearby echoes */}
-        {echoes.map((echo) => (
-          <Marker
-            key={echo.id}
-            coordinate={{
-              latitude: echo.latitude,
-              longitude: echo.longitude,
-            }}
-            title={echo.user_id}
-            description={`⭐ ${echo.rating_score || 0}`}
-            pinColor="#ff6b6b"
-            onPress={() => handleEchoPress(echo.id)}
-          />
-        ))}
+        {/* Echo markers - revealed or mystery */}
+        {echoes.map((echo) => {
+          const distance = calculateDistance(
+            location.latitude,
+            location.longitude,
+            echo.latitude,
+            echo.longitude,
+          );
+          const isRevealed = distance <= PROXIMITY_RADIUS_METERS;
+
+          return (
+            <Marker
+              key={echo.id}
+              coordinate={{
+                latitude: echo.latitude,
+                longitude: echo.longitude,
+              }}
+              title={isRevealed ? "Echo" : "Mystery"}
+              description={
+                isRevealed
+                  ? `⭐ ${echo.rating_score || 0}`
+                  : "Get closer to reveal"
+              }
+              onPress={() => isRevealed && handleEchoPress(echo.id)}
+            >
+              <TouchableOpacity
+                onPress={() => isRevealed && handleEchoPress(echo.id)}
+                disabled={!isRevealed}
+                style={[
+                  styles.markerContainer,
+                  !isRevealed && styles.markerDisabled,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.echoMarker,
+                    isRevealed ? styles.revealedMarker : styles.mysteryMarker,
+                  ]}
+                >
+                  <Text style={styles.markerText}>
+                    {isRevealed ? "📍" : "?"}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </Marker>
+          );
+        })}
       </MapView>
 
-      <View style={styles.infoBox}>
-        <Text style={styles.infoTitle}>EchoFrame</Text>
-        <Text style={styles.infoText}>
-          Your location: {location.latitude.toFixed(4)},{" "}
-          {location.longitude.toFixed(4)}
+      {/* Top status bar */}
+      <View style={styles.topBar}>
+        <Text style={styles.topBarTitle}>EchoFrame Radar</Text>
+        <Text style={styles.topBarSubtitle}>
+          {echoes.length} {echoes.length === 1 ? "echo" : "echoes"} nearby
         </Text>
-        <Text style={styles.infoSubtext}>
-          {echoes.length} {echoes.length === 1 ? "echo" : "echoes"} nearby • Tap
-          to view
-        </Text>
+      </View>
+
+      {/* Bottom info card - Life360 style */}
+      <View style={styles.infoCard}>
+        {echoes.length > 0 ? (
+          <>
+            <View style={styles.proximityIndicatorContainer}>
+              <View style={styles.proximityDot} />
+              <Text style={styles.proximityLabel}>
+                Closest:{" "}
+                {closestDistance && closestDistance < 1
+                  ? "Right here!"
+                  : `${closestDistance?.toFixed(0) || 0}m away`}
+              </Text>
+            </View>
+            <Text style={styles.cardDescription}>
+              {echoes.length === 1
+                ? "1 echo detected"
+                : `${echoes.length} echoes detected`}
+            </Text>
+            <Text style={styles.cardHint}>
+              📍 = Revealed • ? = Mystery (get closer to reveal)
+            </Text>
+          </>
+        ) : (
+          <>
+            <View style={styles.noEchoContainer}>
+              <Text style={styles.noEchoEmoji}>🔍</Text>
+              <Text style={styles.cardDescription}>No echoes nearby</Text>
+              <Text style={styles.cardHint}>
+                Walk within 500 meters to see mystery markers
+              </Text>
+            </View>
+          </>
+        )}
       </View>
     </View>
   );
@@ -175,13 +340,68 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: "center",
   },
-  infoBox: {
+
+  // User marker styles
+  userMarkerContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(0, 132, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#0084ff",
+  },
+  userMarkerInner: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#0084ff",
+  },
+
+  // Echo marker styles
+  markerContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  markerDisabled: {
+    opacity: 0.7,
+  },
+  echoMarker: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  revealedMarker: {
+    backgroundColor: "#fff",
+    borderWidth: 3,
+    borderColor: "#ff6b6b",
+  },
+  mysteryMarker: {
+    backgroundColor: "#6c757d",
+    borderWidth: 2,
+    borderColor: "#495057",
+  },
+  markerText: {
+    fontSize: 20,
+    fontWeight: "600",
+  },
+
+  // Top status bar
+  topBar: {
     position: "absolute",
-    bottom: 80,
+    top: 16,
     left: 16,
     right: 16,
-    backgroundColor: "#fff",
-    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    padding: 12,
     borderRadius: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -189,19 +409,73 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
+  topBarTitle: {
+    fontSize: 16,
+    fontWeight: "700",
     color: "#0084ff",
-    marginBottom: 8,
-  },
-  infoText: {
-    fontSize: 14,
-    color: "#333",
     marginBottom: 4,
   },
-  infoSubtext: {
+  topBarSubtitle: {
+    fontSize: 13,
+    color: "#666",
+  },
+
+  // Bottom info card (Life360 style)
+  infoCard: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 32,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+
+  // Proximity indicator
+  proximityIndicatorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  proximityDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#ff6b6b",
+    marginRight: 8,
+  },
+  proximityLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+  },
+
+  // Card text
+  cardDescription: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+  },
+  cardHint: {
     fontSize: 13,
     color: "#999",
+  },
+
+  // No echo state
+  noEchoContainer: {
+    alignItems: "center",
+  },
+  noEchoEmoji: {
+    fontSize: 48,
+    marginBottom: 12,
   },
 });
