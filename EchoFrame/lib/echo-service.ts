@@ -1,5 +1,5 @@
 import { decode } from "base64-arraybuffer";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { supabase } from "./supabase";
 
 const STORAGE_BUCKET = "echoes";
@@ -71,7 +71,7 @@ export async function uploadEcho(
 
     // Read the image file
     const base64 = await FileSystem.readAsStringAsync(photoUri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: "base64",
     });
 
     const fileName = `${userId}/${Date.now()}.jpg`;
@@ -146,12 +146,14 @@ async function getFallbackNearbyEchoes(
   radiusMeters: number,
 ): Promise<Echo[]> {
   try {
-    // Simple lat/lon box query as fallback
+    // Simple lat/lon box query as fallback (without user join to avoid RLS issues)
     const radiusDegrees = radiusMeters / 111000; // Rough conversion
 
     const { data, error } = await supabase
       .from("echoes")
-      .select("*, users(username, avatar_url)")
+      .select(
+        "id, user_id, image_url, latitude, longitude, timestamp, visibility, rating_score, created_at",
+      )
       .eq("visibility", "public")
       .gte("latitude", latitude - radiusDegrees)
       .lte("latitude", latitude + radiusDegrees)
@@ -160,7 +162,12 @@ async function getFallbackNearbyEchoes(
       .order("rating_score", { ascending: false })
       .limit(50);
 
-    if (error) throw error;
+    if (error) {
+      console.error("Fallback query error:", error);
+      // Return empty array instead of throwing to prevent app crash
+      return [];
+    }
+
     return data || [];
   } catch (error) {
     console.error("Error in fallback nearby echoes:", error);
@@ -257,5 +264,72 @@ export async function rateEcho(
   } catch (error) {
     console.error("Error rating echo:", error);
     return false;
+  }
+}
+
+/**
+ * Delete an echo and its associated data
+ * Only the owner (user_id) can delete their own echo
+ */
+export async function deleteEcho(echoId: string): Promise<boolean> {
+  try {
+    // Get echo to find image path
+    const { data: echo, error: fetchError } = await supabase
+      .from("echoes")
+      .select("image_url, user_id")
+      .eq("id", echoId)
+      .single();
+
+    // If echo not found, it may have already been deleted - this is not an error
+    if (fetchError && fetchError.code === "PGRST116") {
+      console.warn("Echo already deleted or not found:", echoId);
+      return true; // Return success since the goal (deleted state) is achieved
+    }
+
+    if (fetchError) throw fetchError;
+    if (!echo) {
+      // Echo doesn't exist
+      const error = new Error("Echo not found");
+      (error as any).code = "ECHO_NOT_FOUND";
+      throw error;
+    }
+
+    // Delete image from storage if it exists
+    if (echo.image_url) {
+      try {
+        // Extract file path from URL
+        const urlParts = echo.image_url.split(
+          "/storage/v1/object/public/echoes/",
+        );
+        if (urlParts.length > 1) {
+          const filePath = urlParts[1];
+          await supabase.storage.from(STORAGE_BUCKET).remove([filePath]);
+        }
+      } catch (storageError) {
+        console.warn("Failed to delete image from storage:", storageError);
+        // Continue with echo deletion even if storage deletion fails
+      }
+    }
+
+    // Delete all ratings for this echo
+    const { error: ratingsError } = await supabase
+      .from("ratings")
+      .delete()
+      .eq("echo_id", echoId);
+
+    if (ratingsError) throw ratingsError;
+
+    // Delete the echo record
+    const { error: deleteError } = await supabase
+      .from("echoes")
+      .delete()
+      .eq("id", echoId);
+
+    if (deleteError) throw deleteError;
+
+    return true;
+  } catch (error) {
+    console.error("Error deleting echo:", error);
+    throw error;
   }
 }

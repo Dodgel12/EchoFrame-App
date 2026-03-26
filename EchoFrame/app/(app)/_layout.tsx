@@ -3,8 +3,8 @@ import { Tabs } from "expo-router";
 import { useEffect, useRef } from "react";
 import { useColorScheme } from "react-native";
 import {
-    setupNotificationResponseListener,
-    startAutoPolling,
+  setupNotificationResponseListener,
+  startAutoPolling,
 } from "../../lib/discovery-service";
 
 export default function AppLayout() {
@@ -13,6 +13,8 @@ export default function AppLayout() {
 
   // Start location polling and notification listener
   useEffect(() => {
+    let pollingInterval: NodeJS.Timeout | null = null;
+
     try {
       // Set up notification tap handler
       const subscription = setupNotificationResponseListener((echoId) => {
@@ -21,17 +23,27 @@ export default function AppLayout() {
       });
 
       // Start auto-polling for echoes
-      pollingIntervalRef.current = startAutoPolling();
-      console.log("Auto-polling started successfully");
+      try {
+        pollingInterval = startAutoPolling();
+        console.log("Auto-polling started successfully");
+      } catch (pollingError) {
+        console.error(
+          "Error starting auto-polling, app will continue without background polling:",
+          pollingError,
+        );
+        // Don't throw - let the app continue even if polling fails
+      }
 
       return () => {
         subscription?.remove();
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
         }
       };
     } catch (error) {
       console.error("Error in AppLayout effect:", error);
+      // Return empty cleanup function - don't crash the app
+      return () => {};
     }
   }, []);
 

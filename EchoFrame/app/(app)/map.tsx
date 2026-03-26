@@ -1,34 +1,37 @@
+import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Animated,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Animated,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import MapView, { Circle, Marker } from "react-native-maps";
 import { getNearbyEchoes, type Echo } from "../../lib/echo-service";
+import { calculateDistance as haversineDistance } from "../../lib/location-service";
 
 interface UserLocation {
   latitude: number;
   longitude: number;
+  accuracy?: number;
+  heading?: number;
 }
 
-const DETECTION_RADIUS_METERS = 500; // Detect echoes up to 500m away
-const PROXIMITY_RADIUS_METERS = 50; // Reveal echo details at 50m or closer
+const DETECTION_RADIUS_METERS = 1000; // Detect echoes up to 1000m away
+const PROXIMITY_RADIUS_METERS = 75; // Reveal echo details at 75m or closer
 
+// Use accurate Haversine distance calculation from location service
 const calculateDistance = (
   lat1: number,
   lon1: number,
   lat2: number,
   lon2: number,
 ): number => {
-  const dLat = lat2 - lat1;
-  const dLon = lon2 - lon1;
-  return Math.sqrt(dLat * dLat + dLon * dLon) * 111000; // Rough conversion to meters
+  return haversineDistance(lat1, lon1, lat2, lon2);
 };
 
 export default function MapScreen() {
@@ -37,11 +40,20 @@ export default function MapScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [closestDistance, setClosestDistance] = useState<number | null>(null);
+  const [mapType, setMapType] = useState<"standard" | "satellite">("standard");
   const [radarPulse] = useState(new Animated.Value(0));
+  const [isFollowingUser, setIsFollowingUser] = useState(true);
+  const headingAnim = useRef(new Animated.Value(0)).current;
+  const mapRef = useRef<MapView>(null);
+  const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(
+    null,
+  );
+  const lastEchoFetchRef = useRef<number>(0);
+  const lastLocationRef = useRef<{ lat: number; lon: number } | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    const requestLocationAndFetchEchoes = async () => {
+    const startLocationTracking = async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
@@ -50,47 +62,115 @@ export default function MapScreen() {
           return;
         }
 
+        // Get initial location
         const userLocation = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.BestForNavigation,
+          maxAge: 0,
+          timeout: 5000,
         });
 
         const newLocation = {
           latitude: userLocation.coords.latitude,
           longitude: userLocation.coords.longitude,
+          accuracy: userLocation.coords.accuracy ?? undefined,
+          heading: userLocation.coords.heading ?? undefined,
         };
         setLocation(newLocation);
+        if (
+          userLocation.coords.heading !== null &&
+          userLocation.coords.heading !== undefined
+        ) {
+          headingAnim.setValue(userLocation.coords.heading);
+        }
         setError(null);
 
-        // Fetch echoes with 50m proximity radius
+        // Fetch initial echoes
         await fetchNearbyEchoes(newLocation);
 
-        // Start polling for location updates every 5 seconds
-        const interval = setInterval(() => {
-          Location.getCurrentPositionAsync({
+        // Start continuous location tracking with watchPositionAsync
+        const subscription = await Location.watchPositionAsync(
+          {
             accuracy: Location.Accuracy.BestForNavigation,
-          })
-            .then((result) => {
-              const updated = {
-                latitude: result.coords.latitude,
-                longitude: result.coords.longitude,
-              };
-              setLocation(updated);
-              fetchNearbyEchoes(updated);
-            })
-            .catch(console.error);
-        }, 5000);
+            timeInterval: 500, // Update every 500ms to capture heading changes
+            distanceInterval: 2, // Minimum 2m movement to avoid GPS noise while staying responsive
+          },
+          (result) => {
+            const updated = {
+              latitude: result.coords.latitude,
+              longitude: result.coords.longitude,
+              accuracy: result.coords.accuracy ?? undefined,
+              heading: result.coords.heading ?? undefined,
+            };
 
-        return () => clearInterval(interval);
+            // Check if position has actually changed (avoid GPS noise artifacts)
+            const currentLat = result.coords.latitude;
+            const currentLon = result.coords.longitude;
+            const hasPositionChanged =
+              !lastLocationRef.current ||
+              haversineDistance(
+                lastLocationRef.current.lat,
+                lastLocationRef.current.lon,
+                currentLat,
+                currentLon,
+              ) >= 1; // Update if moved 1m or more
+
+            // Always update heading if valid (rotates arrow even when stationary)
+            if (
+              result.coords.heading !== null &&
+              result.coords.heading !== undefined &&
+              result.coords.heading >= 0
+            ) {
+              headingAnim.setValue(result.coords.heading);
+            }
+
+            // Only update location state and map if position changed
+            if (hasPositionChanged) {
+              lastLocationRef.current = { lat: currentLat, lon: currentLon };
+              setLocation(updated);
+
+              // Animate map to follow user smoothly
+              if (isFollowingUser && mapRef.current) {
+                mapRef.current.animateToRegion(
+                  {
+                    latitude: updated.latitude,
+                    longitude: updated.longitude,
+                    latitudeDelta: 0.0035, // Increased precision zoom
+                    longitudeDelta: 0.0035,
+                  },
+                  300, // 300ms animation for snappier response
+                );
+              }
+
+              // Update echoes in real-time (debounce to avoid excessive calls)
+              const now = Date.now();
+              if (
+                echoes.length === 0 ||
+                now - lastEchoFetchRef.current > 1000
+              ) {
+                lastEchoFetchRef.current = now;
+                fetchNearbyEchoes(updated);
+              }
+            }
+          },
+        );
+
+        locationSubscriptionRef.current = subscription;
+        setLoading(false);
       } catch (err) {
         console.error("Location error:", err);
         setError("Failed to get location");
-      } finally {
         setLoading(false);
       }
     };
 
-    requestLocationAndFetchEchoes();
-  }, []);
+    startLocationTracking();
+
+    return () => {
+      if (locationSubscriptionRef.current) {
+        locationSubscriptionRef.current.remove();
+      }
+    };
+  }, [isFollowingUser]);
 
   // Animate radar pulse
   useEffect(() => {
@@ -107,7 +187,6 @@ export default function MapScreen() {
           useNativeDriver: false,
         }),
       ]).start(() => {
-        // Restart pulse
         Animated.timing(radarPulse, {
           toValue: 1,
           duration: 1500,
@@ -119,30 +198,54 @@ export default function MapScreen() {
 
   const fetchNearbyEchoes = async (loc: UserLocation) => {
     try {
-      // Fetch echoes within detection radius (500m)
       const nearbyEchoes = await getNearbyEchoes(
         loc.latitude,
         loc.longitude,
         DETECTION_RADIUS_METERS,
       );
+
+      if (!Array.isArray(nearbyEchoes)) {
+        console.warn("getNearbyEchoes returned non-array:", nearbyEchoes);
+        setEchoes([]);
+        setClosestDistance(null);
+        return;
+      }
+
       setEchoes(nearbyEchoes);
 
-      // Calculate closest distance
       if (nearbyEchoes.length > 0) {
         const distances = nearbyEchoes.map((echo) =>
-          calculateDistance(
+          haversineDistance(
             loc.latitude,
             loc.longitude,
             echo.latitude,
             echo.longitude,
           ),
         );
-        setClosestDistance(Math.min(...distances));
+        const minDist = Math.min(...distances);
+        setClosestDistance(isFinite(minDist) ? minDist : null);
       } else {
         setClosestDistance(null);
       }
     } catch (err) {
       console.error("Error fetching echoes:", err);
+      setEchoes([]);
+      setClosestDistance(null);
+    }
+  };
+
+  const handleCenterOnMe = () => {
+    if (location && mapRef.current) {
+      setIsFollowingUser(true);
+      mapRef.current.animateToRegion(
+        {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          latitudeDelta: 0.0045,
+          longitudeDelta: 0.0045,
+        },
+        500,
+      );
     }
   };
 
@@ -178,30 +281,45 @@ export default function MapScreen() {
   return (
     <View style={styles.container}>
       <MapView
+        ref={mapRef}
         style={styles.map}
+        mapType={mapType}
         initialRegion={{
           latitude: location.latitude,
           longitude: location.longitude,
-          latitudeDelta: 0.0045,
-          longitudeDelta: 0.0045,
+          latitudeDelta: 0.0035,
+          longitudeDelta: 0.0035,
         }}
-        region={{
-          latitude: location.latitude,
-          longitude: location.longitude,
-          latitudeDelta: 0.0045,
-          longitudeDelta: 0.0045,
-        }}
+        onRegionChangeComplete={() => setIsFollowingUser(false)}
+        showsUserLocation={false}
+        loadingEnabled={true}
+        loadingIndicatorColor="#0084ff"
       >
-        {/* User location marker - blue pulse */}
+        {/* User location marker - custom map pointer */}
         <Marker
           coordinate={location}
           title="You"
-          pinColor="#0084ff"
           flat={true}
+          anchor={{ x: 0.5, y: 1 }}
+          zIndex={1}
         >
-          <View style={styles.userMarkerContainer}>
-            <View style={styles.userMarkerInner} />
-          </View>
+          <Animated.Image
+            source={require("../../assets/echoframes/pngtree-navigation-arrow-map-pointer-vector-png-image_12636239.png")}
+            style={[
+              styles.userMarker,
+              {
+                transform: [
+                  {
+                    rotate: headingAnim.interpolate({
+                      inputRange: [0, 360],
+                      outputRange: ["0deg", "360deg"],
+                    }),
+                  },
+                ],
+              },
+            ]}
+            resizeMode="contain"
+          />
         </Marker>
 
         {/* Proximity radius circle (50m) */}
@@ -246,6 +364,7 @@ export default function MapScreen() {
                   : "Get closer to reveal"
               }
               onPress={() => isRevealed && handleEchoPress(echo.id)}
+              zIndex={100}
             >
               <TouchableOpacity
                 onPress={() => isRevealed && handleEchoPress(echo.id)}
@@ -278,6 +397,28 @@ export default function MapScreen() {
           {echoes.length} {echoes.length === 1 ? "echo" : "echoes"} nearby
         </Text>
       </View>
+
+      {/* Center on me button - Google Maps style */}
+      <TouchableOpacity
+        style={styles.centerOnMeButton}
+        onPress={handleCenterOnMe}
+      >
+        <Ionicons name="locate" size={24} color="#0084ff" />
+      </TouchableOpacity>
+
+      {/* Map type toggle button - Satellite/Standard */}
+      <TouchableOpacity
+        style={styles.mapTypeButton}
+        onPress={() =>
+          setMapType(mapType === "standard" ? "satellite" : "standard")
+        }
+      >
+        <Ionicons
+          name={mapType === "satellite" ? "map" : "satellite"}
+          size={24}
+          color="#0084ff"
+        />
+      </TouchableOpacity>
 
       {/* Bottom info card - Life360 style */}
       <View style={styles.infoCard}>
@@ -359,6 +500,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#0084ff",
   },
 
+  // Custom user marker icon
+  userMarker: {
+    width: 40,
+    height: 40,
+  },
+
   // Echo marker styles
   markerContainer: {
     justifyContent: "center",
@@ -418,6 +565,42 @@ const styles = StyleSheet.create({
   topBarSubtitle: {
     fontSize: 13,
     color: "#666",
+  },
+
+  // Center on me button (floating action button)
+  centerOnMeButton: {
+    position: "absolute",
+    bottom: 280,
+    right: 16,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+
+  // Map type toggle button (Satellite/Standard)
+  mapTypeButton: {
+    position: "absolute",
+    bottom: 350,
+    right: 16,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
   },
 
   // Bottom info card (Life360 style)

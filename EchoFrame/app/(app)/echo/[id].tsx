@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useAuth } from "../../../lib/auth-context";
 import type { Echo } from "../../../lib/echo-service";
-import { getEchoById, rateEcho } from "../../../lib/echo-service";
+import { deleteEcho, getEchoById, rateEcho } from "../../../lib/echo-service";
 
 export default function EchoDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -22,6 +22,7 @@ export default function EchoDetailScreen() {
   const [echo, setEcho] = useState<Echo | null>(null);
   const [loading, setLoading] = useState(true);
   const [ratingLoading, setRatingLoading] = useState(false);
+  const [deletingLoading, setDeletingLoading] = useState(false);
   const [userRating, setUserRating] = useState<1 | -1 | null>(null);
 
   const fetchEcho = useCallback(async () => {
@@ -61,6 +62,66 @@ export default function EchoDetailScreen() {
     } finally {
       setRatingLoading(false);
     }
+  };
+
+  const handleDelete = async () => {
+    if (!echo) return;
+
+    Alert.alert(
+      "Delete Echo",
+      "Are you sure you want to delete this echo? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          onPress: () => {},
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          onPress: async () => {
+            setDeletingLoading(true);
+            try {
+              await deleteEcho(echo.id);
+              // Clear the echo state immediately
+              setEcho(null);
+              Alert.alert("Success", "Echo deleted successfully", [
+                {
+                  text: "OK",
+                  onPress: () => router.back(),
+                },
+              ]);
+            } catch (error: any) {
+              console.error("Delete error:", error);
+              // Handle already-deleted echoes gracefully
+              if (
+                error.message?.includes("not found") ||
+                error.code === "ECHO_NOT_FOUND" ||
+                error.code === "PGRST116"
+              ) {
+                Alert.alert(
+                  "Echo Already Deleted",
+                  "This echo was already deleted. Returning to previous screen...",
+                  [
+                    {
+                      text: "OK",
+                      onPress: () => router.back(),
+                    },
+                  ],
+                );
+              } else {
+                Alert.alert(
+                  "Error",
+                  "Failed to delete echo. Please try again.",
+                );
+              }
+            } finally {
+              setDeletingLoading(false);
+            }
+          },
+          style: "destructive",
+        },
+      ],
+    );
   };
 
   if (loading) {
@@ -223,6 +284,29 @@ export default function EchoDetailScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Delete button - only show if user is owner */}
+      {echo.user_id === user?.id && (
+        <View style={styles.deleteSection}>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={handleDelete}
+            disabled={deletingLoading}
+          >
+            {deletingLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="trash" size={20} color="#fff" />
+                <Text style={styles.deleteButtonText}>Delete Echo</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <Text style={styles.deleteHint}>
+            You can only delete your own echoes
+          </Text>
+        </View>
+      )}
 
       {/* Help section at bottom */}
       <View style={styles.helpSection}>
@@ -525,5 +609,38 @@ const styles = StyleSheet.create({
     color: "#555",
     flex: 1,
     lineHeight: 18,
+  },
+
+  // Delete section
+  deleteSection: {
+    backgroundColor: "#fff",
+    marginHorizontal: 12,
+    marginVertical: 16,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderTopWidth: 2,
+    borderTopColor: "#ffebee",
+  },
+  deleteButton: {
+    flexDirection: "row",
+    backgroundColor: "#d32f2f",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  deleteButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  deleteHint: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 10,
+    textAlign: "center",
   },
 });

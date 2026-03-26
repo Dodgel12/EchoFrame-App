@@ -29,6 +29,7 @@ export default function CameraScreen() {
   const [mode, setMode] = useState<CameraMode>("capture");
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<"front" | "back">("back");
   const cameraRef = useRef<CameraView>(null);
   const { user } = useAuth();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -153,6 +154,10 @@ export default function CameraScreen() {
     setMode("capture");
   };
 
+  const handleFlipCamera = () => {
+    setCameraFacing(cameraFacing === "back" ? "front" : "back");
+  };
+
   if (hasPermission === false) {
     return (
       <View style={styles.centerContainer}>
@@ -225,7 +230,7 @@ export default function CameraScreen() {
       <CameraView
         ref={cameraRef}
         style={styles.camera}
-        facing="back"
+        facing={cameraFacing}
         onCameraReady={() => setCameraReady(true)}
       />
 
@@ -235,20 +240,32 @@ export default function CameraScreen() {
       </View>
 
       <View style={styles.controls}>
-        <TouchableOpacity
-          style={[
-            styles.captureButton,
-            isProcessing && styles.captureButtonDisabled,
-          ]}
-          onPress={handleCapture}
-          disabled={!cameraReady || isProcessing}
-        >
-          {isProcessing ? (
-            <ActivityIndicator color="#fff" size="large" />
-          ) : (
-            <View style={styles.captureCircle} />
-          )}
-        </TouchableOpacity>
+        <View style={styles.buttonRow}>
+          <TouchableOpacity
+            style={styles.flipButton}
+            onPress={handleFlipCamera}
+            disabled={!cameraReady || isProcessing}
+          >
+            <Ionicons name="camera-reverse" size={24} color="#fff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.captureButton,
+              isProcessing && styles.captureButtonDisabled,
+            ]}
+            onPress={handleCapture}
+            disabled={!cameraReady || isProcessing}
+          >
+            {isProcessing ? (
+              <ActivityIndicator color="#fff" size="large" />
+            ) : (
+              <View style={styles.captureCircle} />
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.spacer} />
+        </View>
 
         <Text style={styles.hint}>Tap to capture your echo</Text>
       </View>
@@ -321,6 +338,14 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     paddingHorizontal: 16,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "column",
+  },
+  buttonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
   },
   captureButton: {
     width: 80,
@@ -329,7 +354,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -349,6 +373,21 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     textAlign: "center",
+  },
+  flipButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.5)",
+  },
+  spacer: {
+    width: 50,
+    height: 50,
   },
   previewContainer: {
     flex: 1,
