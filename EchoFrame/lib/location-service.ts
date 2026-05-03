@@ -53,7 +53,7 @@ export async function getCurrentLocation(): Promise<LocationCoordinates | null> 
 
 export async function startLocationTracking(
   callback: (location: LocationCoordinates) => void,
-  intervalSeconds: number = 10,
+  intervalSeconds: number = 5,
 ): Promise<Location.LocationSubscription | null> {
   try {
     const { status } = await Location.getForegroundPermissionsAsync();
@@ -64,9 +64,9 @@ export async function startLocationTracking(
 
     const subscription = await Location.watchPositionAsync(
       {
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.High,
         timeInterval: intervalSeconds * 1000,
-        distanceInterval: 10, // Minimum 10m change to trigger update
+        distanceInterval: 7, // Minimum 7m change to trigger update
       },
       (location) => {
         callback({

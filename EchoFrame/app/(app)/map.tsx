@@ -22,7 +22,7 @@ interface UserLocation {
 }
 
 const DETECTION_RADIUS_METERS = 1000; // Detect echoes up to 1000m away
-const PROXIMITY_RADIUS_METERS = 75; // Reveal echo details at 75m or closer
+const PROXIMITY_RADIUS_METERS = 30; // Reveal echo details at 30m or closer
 
 // Use accurate Haversine distance calculation from location service
 const calculateDistance = (
